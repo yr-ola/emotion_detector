@@ -1,7 +1,8 @@
 streamlit
-fastapi
-uvicorn
-opencv-python
-numpy
 torch
+torchvision
+facenet-pytorch
 Pillow
+numpy
+git+https://github.com/sb-ai-lab/EmotiEffLib.git
+opencv-python-headless

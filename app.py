@@ -10,9 +10,12 @@ import streamlit as st
 from PIL import Image
 
 from facenet_pytorch import MTCNN
-from emotiefflib.facial_analysis import EmotiEffLibRecognizer, get_model_list
+from EmotiEffLib.facial_analysis import EmotiEffLibRecognizer, get_model_list  # ✅ Fixed import
 
 
+# ------------------------------
+# DATABASE SETUP
+# ------------------------------
 def init_database(db_path: str = "emotion_app.db") -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
@@ -50,6 +53,9 @@ def save_result(
     conn.commit()
 
 
+# ------------------------------
+# FACE DETECTION & EMOTION LOGIC
+# ------------------------------
 def detect_first_face(frame: np.ndarray, device: str) -> Optional[np.ndarray]:
     mtcnn = MTCNN(keep_all=False, post_process=False, min_face_size=40, device=device)
     bounding_boxes, probs = mtcnn.detect(frame, landmarks=False)
@@ -74,66 +80,83 @@ def classify_emotion(recognizer, face_img: np.ndarray) -> Tuple[str, float]:
     return label, confidence
 
 
+# ------------------------------
+# HISTORY UI
+# ------------------------------
 def render_history(conn: sqlite3.Connection) -> None:
-    expander = st.expander("See usage history")
+    expander = st.expander("📜 See usage history")
     with expander:
         cursor = conn.cursor()
         rows = cursor.execute(
             "SELECT name, timestamp, emotion, confidence FROM usage ORDER BY id DESC LIMIT 100"
         ).fetchall()
         if rows:
-            st.write("## Recent entries")
+            st.write("## Recent Predictions")
             for row in rows:
                 name, ts, emotion, conf = row
-                st.write(f"{ts} – {name}: {emotion} ({conf:.2f})")
+                st.write(f"🕒 {ts} — **{name}**: {emotion} ({conf:.2f})")
         else:
-            st.info("No records found.")
+            st.info("No past predictions yet.")
 
 
+# ------------------------------
+# STREAMLIT APP MAIN
+# ------------------------------
 def main() -> None:
     st.set_page_config(
         page_title="Emotion Detection App",
         page_icon="😊",
         layout="centered",
     )
-    st.title("Emotion Detection App")
+    st.title("😃 Emotion Detection App")
     st.write(
-        "Predict a person's emotion from a photograph using a pre-trained EmotiEffLib model."
+        "Upload or capture a photo to predict a person's emotion using a pre-trained **EmotiEffLib** model."
     )
+
     conn = init_database()
-    name = st.text_input("Your name", max_chars=50)
-    device = "cuda" if st.checkbox("Use GPU if available") else "cpu"
-    model_name = st.selectbox("Model", get_model_list(), index=0)
+
+    # User input
+    name = st.text_input("👤 Your name", max_chars=50)
+    device = "cuda" if st.checkbox("Use GPU (if available)") else "cpu"
+
+    # Model selection
+    model_name = st.selectbox("Select model", get_model_list(), index=0)
     recognizer = EmotiEffLibRecognizer(engine="torch", model_name=model_name, device=device)
-    mode = st.radio(
-        "Select input method:", ("Upload Image", "Capture from Webcam")
-    )
+
+    # Upload or capture image
+    mode = st.radio("Select input method:", ("Upload Image", "Capture from Webcam"))
     image: Optional[np.ndarray] = None
     raw_bytes: Optional[bytes] = None
+
     if mode == "Upload Image":
-        uploaded_file = st.file_uploader("Upload a face image", type=["jpg", "jpeg", "png"])
-        if uploaded_file is not None:
+        uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+        if uploaded_file:
             raw_bytes = uploaded_file.getvalue()
             st.image(uploaded_file, caption="Uploaded image", use_column_width=True)
             pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
             image = np.array(pil_img)
+
     else:
-        picture = st.camera_input("Take a photo")
-        if picture is not None:
+        picture = st.camera_input("📷 Take a photo")
+        if picture:
             raw_bytes = picture.getvalue()
             st.image(picture, caption="Captured image", use_column_width=True)
             pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
             image = np.array(pil_img)
+
+    # Emotion prediction
     if image is not None and raw_bytes is not None and name:
         face = detect_first_face(image, device)
         if face is None:
-            st.warning("No face detected in the image.")
+            st.warning("⚠️ No face detected in the image.")
         else:
             emotion, confidence = classify_emotion(recognizer, face)
-            st.success(f"Predicted Emotion: {emotion} (confidence: {confidence:.2f})")
-            if st.button("Save result"):
+            st.success(f"Predicted Emotion: **{emotion}** (confidence: {confidence:.2f})")
+
+            if st.button("💾 Save result"):
                 save_result(conn, name, raw_bytes, emotion, confidence)
-                st.toast("Result saved to database.")
+                st.toast("✅ Result saved successfully!")
+
     render_history(conn)
 
 
