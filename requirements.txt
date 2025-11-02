@@ -1,0 +1,7 @@
+streamlit
+fastapi
+uvicorn
+opencv-python
+numpy
+torch
+Pillow
