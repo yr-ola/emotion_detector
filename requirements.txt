@@ -7,3 +7,12 @@ numpy
 opencv-contrib-python-headless
 
 git+https://github.com/sb-ai-lab/EmotiEffLib.git
+
+streamlit
+torch
+torchvision
+facenet-pytorch
+emotiefflib
+opencv-python-headless
+pillow
+numpy

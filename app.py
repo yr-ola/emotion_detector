@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import io
+import os
 import sqlite3
+import urllib.request
 from datetime import datetime
 from typing import Optional, Tuple
 
 import numpy as np
 import streamlit as st
 from PIL import Image
-
 from facenet_pytorch import MTCNN
 from emotiefflib.facial_analysis import EmotiEffLibRecognizer, get_model_list
 
+# -----------------------------
+# 🔧 Utility functions
+# -----------------------------
 
-
-# ------------------------------
-# DATABASE SETUP
-# ------------------------------
 def init_database(db_path: str = "emotion_app.db") -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
@@ -54,9 +54,6 @@ def save_result(
     conn.commit()
 
 
-# ------------------------------
-# FACE DETECTION & EMOTION LOGIC
-# ------------------------------
 def detect_first_face(frame: np.ndarray, device: str) -> Optional[np.ndarray]:
     mtcnn = MTCNN(keep_all=False, post_process=False, min_face_size=40, device=device)
     bounding_boxes, probs = mtcnn.detect(frame, landmarks=False)
@@ -81,9 +78,6 @@ def classify_emotion(recognizer, face_img: np.ndarray) -> Tuple[str, float]:
     return label, confidence
 
 
-# ------------------------------
-# HISTORY UI
-# ------------------------------
 def render_history(conn: sqlite3.Connection) -> None:
     expander = st.expander("📜 See usage history")
     with expander:
@@ -92,71 +86,84 @@ def render_history(conn: sqlite3.Connection) -> None:
             "SELECT name, timestamp, emotion, confidence FROM usage ORDER BY id DESC LIMIT 100"
         ).fetchall()
         if rows:
-            st.write("## Recent Predictions")
+            st.write("### Recent Entries")
             for row in rows:
                 name, ts, emotion, conf = row
-                st.write(f"🕒 {ts} — **{name}**: {emotion} ({conf:.2f})")
+                st.write(f"**{ts}** – {name}: {emotion} ({conf:.2f})")
         else:
-            st.info("No past predictions yet.")
+            st.info("No records found.")
 
 
-# ------------------------------
-# STREAMLIT APP MAIN
-# ------------------------------
+# -----------------------------
+# 🧠 Main Streamlit App
+# -----------------------------
+
 def main() -> None:
     st.set_page_config(
         page_title="Emotion Detection App",
         page_icon="😊",
         layout="centered",
     )
-    st.title("😃 Emotion Detection App")
+    st.title("Emotion Detection App")
     st.write(
-        "Upload or capture a photo to predict a person's emotion using a pre-trained **EmotiEffLib** model."
+        "Predict a person's emotion from a photograph using a pre-trained **EmotiEffLib** model."
     )
 
     conn = init_database()
 
-    # User input
-    name = st.text_input("👤 Your name", max_chars=50)
+    name = st.text_input("Your Name", max_chars=50)
     device = "cuda" if st.checkbox("Use GPU (if available)") else "cpu"
+    model_name = st.selectbox("Choose Model", get_model_list(), index=0)
 
-    # Model selection
-    model_name = st.selectbox("Select model", get_model_list(), index=0)
+    # -----------------------------
+    # 🧩 Auto-download model weights
+    # -----------------------------
+    MODEL_URLS = {
+        "affectnet_emotion": "https://huggingface.co/sb-ai-lab/EmotiEffLib/resolve/main/affectnet_emotion.pt",
+        "rafdb_emotion": "https://huggingface.co/sb-ai-lab/EmotiEffLib/resolve/main/rafdb_emotion.pt",
+    }
+    model_file = f"{model_name}.pt"
+
+    if not os.path.exists(model_file):
+        st.warning(f"Downloading model weights for **{model_name}**...")
+        try:
+            urllib.request.urlretrieve(MODEL_URLS.get(model_name, MODEL_URLS["affectnet_emotion"]), model_file)
+            st.success("Model downloaded successfully ✅")
+        except Exception as e:
+            st.error(f"Failed to download model: {e}")
+            return
+
     recognizer = EmotiEffLibRecognizer(engine="torch", model_name=model_name, device=device)
 
-    # Upload or capture image
     mode = st.radio("Select input method:", ("Upload Image", "Capture from Webcam"))
     image: Optional[np.ndarray] = None
     raw_bytes: Optional[bytes] = None
 
     if mode == "Upload Image":
-        uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-        if uploaded_file:
+        uploaded_file = st.file_uploader("Upload a face image", type=["jpg", "jpeg", "png"])
+        if uploaded_file is not None:
             raw_bytes = uploaded_file.getvalue()
-            st.image(uploaded_file, caption="Uploaded image", use_column_width=True)
+            st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
             pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
             image = np.array(pil_img)
-
     else:
-        picture = st.camera_input("📷 Take a photo")
-        if picture:
+        picture = st.camera_input("Take a Photo")
+        if picture is not None:
             raw_bytes = picture.getvalue()
-            st.image(picture, caption="Captured image", use_column_width=True)
+            st.image(picture, caption="Captured Image", use_container_width=True)
             pil_img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
             image = np.array(pil_img)
 
-    # Emotion prediction
     if image is not None and raw_bytes is not None and name:
         face = detect_first_face(image, device)
         if face is None:
-            st.warning("⚠️ No face detected in the image.")
+            st.warning("No face detected in the image.")
         else:
             emotion, confidence = classify_emotion(recognizer, face)
-            st.success(f"Predicted Emotion: **{emotion}** (confidence: {confidence:.2f})")
-
-            if st.button("💾 Save result"):
+            st.success(f"**Predicted Emotion:** {emotion} ({confidence:.2f} confidence)")
+            if st.button("💾 Save Result"):
                 save_result(conn, name, raw_bytes, emotion, confidence)
-                st.toast("✅ Result saved successfully!")
+                st.toast("Result saved to database ✅")
 
     render_history(conn)
 
