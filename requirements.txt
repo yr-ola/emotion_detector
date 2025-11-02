@@ -6,3 +6,4 @@ Pillow
 numpy
 git+https://github.com/sb-ai-lab/EmotiEffLib.git
 opencv-python-headless
+git+https://github.com/sb-ai-lab/EmotiEffLib.git

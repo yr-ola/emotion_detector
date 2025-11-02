@@ -10,7 +10,8 @@ import streamlit as st
 from PIL import Image
 
 from facenet_pytorch import MTCNN
-from EmotiEffLib.facial_analysis import EmotiEffLibRecognizer, get_model_list  # ✅ Fixed import
+from emotiefflib.facial_analysis import EmotiEffLibRecognizer, get_model_list
+
 
 
 # ------------------------------
